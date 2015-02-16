@@ -20,4 +20,4 @@ val translate : Lookup.t -> direction -> Cstruct.t -> Cstruct.t option
   * frame and given (xl_ip, xl_port). 
   * if insertion succeeded, return the new table;
   * otherwise, return an error type indicating the problem. *)
-val make_entry : Lookup.t -> Cstruct.t -> Ipaddr.t -> int -> insert_result
+val make_entry : Lookup.t -> Cstruct.t -> Ipaddr.t -> int -> Lookup.state -> insert_result

@@ -178,7 +178,7 @@ let translate table direction frame =
   | Some (V6 src, V6 dst) -> None (* TODO, obviously *) (* ipv6 *)
   | _ -> None (* don't forward arp or other types *)
 
-let make_entry table frame xl_ip xl_port =
+let make_entry table frame xl_ip xl_port timeout =
   (* basic sanity check; nothing smaller than this will be nat-able *)
   if (Cstruct.len frame) < (Wire_structs.sizeof_ethernet +
                           Wire_structs.sizeof_ipv4 + Wire_structs.sizeof_udp) 
@@ -198,7 +198,8 @@ let make_entry table frame xl_ip xl_port =
         (* only Organization and Global scope IPs get routed *)
         match check_scope src, check_scope dst with
         | true, true -> (
-            match Lookup.insert table proto (src, sport) (dst, dport) (xl_ip, xl_port)
+            match Lookup.insert table proto 
+                    (src, sport) (dst, dport) (xl_ip, xl_port) timeout
             with
             | Some t -> Ok t
             | None -> Overlap 

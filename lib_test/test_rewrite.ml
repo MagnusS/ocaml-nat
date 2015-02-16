@@ -137,7 +137,7 @@ let basic_tcpv4 (direction : Rewrite.direction) proto ttl src dst xl sport dport
   in
   let table = 
     match Lookup.insert (Lookup.empty ()) proto
-            ((V4 src), sport) ((V4 dst), dport) ((V4 xl), xlport)
+            ((V4 src), sport) ((V4 dst), dport) ((V4 xl), xlport) Active
     with
     | Some t -> t
     | None -> assert_failure "Failed to insert test data into table structure"
@@ -233,7 +233,7 @@ let test_udp_ipv4 context =
   let (frame, len) = add_udp (frame, len) 255 1024 in
   let table = 
     match Lookup.insert (Lookup.empty ()) 17 
-            ((V4 src), 255) ((V4 dst), 1024) ((V4 xl), 45454)
+            ((V4 src), 255) ((V4 dst), 1024) ((V4 xl), 45454) Active
     with
     | Some t -> t
     | None -> assert_failure "Failed to insert test data into table structure"
@@ -272,7 +272,7 @@ let test_udp_ipv6 context =
     match Lookup.insert (Lookup.empty ()) proto 
             ((V6 interior_v6), 255) 
             ((V6 exterior_v6), 1024) 
-            ((V6 translate_v6), 45454)
+            ((V6 translate_v6), 45454) Active
     with
     | Some t -> t
     | None -> assert_failure "Failed to insert test data into table structure"
@@ -294,7 +294,7 @@ let test_make_entry_valid_pkt context =
   let table = Lookup.empty () in
   let (frame, len) = basic_ipv4_frame proto src dst 52 smac_addr in
   let (frame, len) = add_udp (frame, len) sport dport in
-  match Rewrite.make_entry table frame (Ipaddr.V4 xl_ip) xl_port with
+  match Rewrite.make_entry table frame (Ipaddr.V4 xl_ip) xl_port Active with
   | Overlap -> assert_failure "make_entry claimed overlap when inserting into an
                  empty table"
   | Unparseable -> 
@@ -321,7 +321,7 @@ let test_make_entry_valid_pkt context =
     let dst_lookup = Lookup.lookup t proto (V4 dst, dport) (V4 xl_ip, xl_port) in
     check_entries src_lookup dst_lookup;
     (* trying the same operation again should give us an Overlap failure *)
-    match Rewrite.make_entry t frame (Ipaddr.V4 xl_ip) xl_port with
+    match Rewrite.make_entry t frame (Ipaddr.V4 xl_ip) xl_port Active with
     | Overlap -> ()
     | Unparseable -> 
       Printf.printf "Allegedly unparseable frame follows:\n";
@@ -341,7 +341,7 @@ let test_make_entry_nonsense context =
   let frame_size = (Wire_structs.sizeof_ethernet + Wire_structs.sizeof_ipv4) in
   let mangled_looking, _ = basic_ipv4_frame ~frame_size proto src dst 60 smac_addr in
   match (Rewrite.make_entry (Lookup.empty ()) mangled_looking
-           (Ipaddr.V4 xl_ip) xl_port) with
+           (Ipaddr.V4 xl_ip) xl_port) Active with
   | Overlap -> assert_failure "make_entry claimed a mangled packet was already
   in the table"
   | Ok t -> assert_failure "make_entry happily took a mangled packet"
@@ -352,17 +352,54 @@ let test_make_entry_nonsense context =
     let broadcast, _ = add_tcp (basic_ipv4_frame 6 src broadcast_dst 30 smac_addr)
         sport dport in
     match (Rewrite.make_entry (Lookup.empty ()) broadcast (Ipaddr.V4 xl_ip)
-             xl_port) with
+             xl_port) Active with
     | Ok _ | Overlap -> assert_failure "make_entry happily took a broadcast
     packet"
     | Unparseable -> 
       (* try just an ethernet frame *)
       let e = zero_cstruct (Cstruct.create Wire_structs.sizeof_ethernet) in
-      match (Rewrite.make_entry (Lookup.empty ()) e (Ipaddr.V4 xl_ip) xl_port)
+      match (Rewrite.make_entry (Lookup.empty ()) e (Ipaddr.V4 xl_ip) xl_port
+               Active)
       with
       | Ok _ | Overlap -> assert_failure "make_entry claims to have succeeded
       with a bare ethernet frame"
       | Unparseable -> ()
+
+let test_udp_entry_timeout context =
+  let wait_period = 2 in
+  let ttl = 4 in
+  let proto = 17 in
+  let src = (Ipaddr.V4.of_string_exn "10.254.254.254") in
+  let dst = (Ipaddr.V4.of_string_exn "8.8.8.8") in 
+  let xl = (Ipaddr.V4.of_string_exn "126.4.1.2") in
+  let sport, dport, xlport = 40192,10001,45454 in
+  let smac_addr = Macaddr.of_string_exn "00:16:3e:44:44:44" in
+  let (frame, len) = basic_ipv4_frame proto src dst ttl smac_addr in
+  let (frame, len) = add_udp (frame, len) sport dport in
+  (* ugh this is a horrible architecture. *)
+  (* so let's think about why this sucks:
+   * shared mutable state
+   * with no locks 
+   * and non-atomic operations 
+   *)
+  let table = Lookup.empty () in
+  let timeout proto src dst xl = 
+    let open Lwt in
+    return (Unix.sleep wait_period) >>= fun () ->
+    Printf.printf "oh noes timeout expired";
+    (* TODO: don't ignore results *)
+    ignore (Lookup.delete table proto src dst xl);
+    return ()
+  in
+  let s, d, x = ((V4 src), sport), ((V4 dst), dport), ((V4 xl), xlport) in
+  Lookup.insert table proto s d x (Waiting (timeout proto s d x));
+  match Rewrite.translate table Source frame with
+  | Some n ->
+    Unix.sleep wait_period;
+    assert_equal None (Rewrite.translate table Source frame)
+  | None -> assert_failure "We didn't translate a frame before the timeout
+  should've expired" 
+
 
 let test_tcp_ipv6 context =
   todo "Test not implemented :("
@@ -375,6 +412,8 @@ let suite = "test-rewrite" >:::
               "TCP IPv4 source rewriting works" >:: test_tcp_ipv4_src ;
               "UDP IPv6 rewriting works" >:: test_udp_ipv6;
               "TCP IPv6 rewriting works" >:: test_tcp_ipv6; 
+              "UDP IPv4 entries expire when asked to" >::
+              test_udp_entry_timeout;
               (* TODO: 4-to-6, 6-to-4 tests *)
               "make_entry makes entries" >:: test_make_entry_valid_pkt;
               (* TODO: test make_entry in non-ipv4 contexts *)

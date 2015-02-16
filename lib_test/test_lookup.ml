@@ -24,8 +24,8 @@ let default_table () =
     | None -> assert_failure "Couldn't construct test NAT table"
   in
   let t = Lookup.empty () in
-  let t = or_error (insert t 6 interior_v4 exterior_v4 translate_v4) in
-  let t = or_error (insert t 17 interior_v6 exterior_v6 translate_v6) in
+  let t = or_error (insert t 6 interior_v4 exterior_v4 translate_v4 Active) in
+  let t = or_error (insert t 17 interior_v6 exterior_v6 translate_v6 Active) in
   t
 
 let basic_lookup context =
@@ -80,7 +80,16 @@ let crud context =
           | Some t -> t
           )) h entries
     in
-    let add_all h entries = for_all h entries insert in
+    let add_all h entries = 
+      List.fold_left (
+        fun h (protocol, left, right, translate) -> (
+          match insert h protocol left right translate Active with
+          | None ->
+            let str = show_table_entry (protocol, left, right, translate) in
+            assert_failure (Printf.sprintf "Couldn't work with %s" str)
+          | Some t -> t
+          )) h entries
+    in
     let remove_all h entries = for_all h entries delete in
     (* see whether it's all there as expected *)
     let all_there h entries = 
@@ -122,7 +131,7 @@ let crud context =
 let uniqueness context =
   let t = default_table () in
   let try_bad_insert proto pair1 pair2 pair3 =
-  match insert t proto pair1 pair2 pair3 with
+  match insert t proto pair1 pair2 pair3 Active with
   | Some t -> assert_failure (Printf.sprintf "Insertion succeeded for duplicate
                                 table entry %s" (show_table_entry (proto, pair1,
                                                                    pair2,

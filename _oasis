@@ -12,7 +12,7 @@ Description: rewrite packets to support translation between external and interna
 Library mirage_nat
   Path: lib
   Modules: Lookup, Rewrite
-  BuildDepends: ipaddr, tcpip, cstruct
+  BuildDepends: ipaddr, tcpip, cstruct, lwt
 
 Executable test_lookup
   Path: lib_test
