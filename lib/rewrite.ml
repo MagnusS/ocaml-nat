@@ -110,12 +110,14 @@ let retrieve_ports tx_layer =
    (Wire_structs.get_udp_dest_port tx_layer : int))
 
 let detect_direction frame ip =
+  (* this would be a horrible bug if we were concerned with anything except
+    unicast traffic, but luckily we're OK *)
   match retrieve_ips frame with
   | Some (src, dst) when (Ipaddr.compare src ip = 0) -> Some Source
   | Some (src, dst) when (Ipaddr.compare dst ip = 0) -> Some Destination
-  | _ -> None
+  | Some _ | None -> None
 
-let translate table direction frame =
+let translate ?(mode=(OneToMany : Lookup.xl_mode)) table direction frame =
   (* note that ethif.input doesn't have the same register-listeners-then-input
      format that tcp/udp do, so we could use it for the outer layer of parsing *)
   let ip_size is_ipv6 = match is_ipv6 with 
@@ -169,6 +171,17 @@ let translate table direction frame =
               | Some (V4 new_ip, new_port) ->
                 (* TODO: we should probably refuse to pass TTL = 0 and instead send an
                    ICMP message back to the sender *)
+                (match mode with 
+                | OneToOne ->
+                  (* flip IPs *)
+                  rewrite_ip false ip_packet Source (V4 dst);
+                  rewrite_ip false ip_packet Destination (V4 src);
+                  (* flip ports *)
+                  rewrite_port higherproto_packet Source dport;
+                  rewrite_port higherproto_packet Destination sport
+                | OneToMany -> ()
+                )
+                  ;
                 rewrite_ip false ip_packet direction (V4 new_ip);
                 rewrite_port higherproto_packet direction new_port;
                 decrement_ttl ip_packet;

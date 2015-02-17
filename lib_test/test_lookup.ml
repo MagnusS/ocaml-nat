@@ -50,21 +50,21 @@ let one_to_one_lookup context =
   assert_equal 
     (lookup t 6 interior_v4 translate_v4) (Some exterior_v4);
   assert_equal 
-    (lookup t 6 translate_v4 exterior_v4) (Some interior_v4);
+    (lookup t 6 exterior_v4 translate_v4) (Some interior_v4);
   assert_equal 
     (lookup t 17 interior_v6 translate_v6) (Some exterior_v6);
   assert_equal 
-    (lookup t 17 translate_v6 exterior_v6) (Some interior_v6);
+    (lookup t 17 exterior_v6 translate_v6) (Some interior_v6);
   assert_equal 
-    (lookup t 4 interior_v4 exterior_v4) None;
+    (lookup t 4 interior_v4 translate_v6) None;
   assert_equal 
     (lookup t 17 interior_v4 exterior_v4) None; (* this entry will succeed for
                                                   1:many but shouldn't for 1:1
                                                   *)
   assert_equal 
-    (lookup t 6 ((Ipaddr.of_string_exn "8.8.8.8"), 6000) exterior_v4) None;
+    (lookup t 6 ((Ipaddr.of_string_exn "8.8.8.8"), 6000) translate_v4) None;
   assert_equal 
-    (lookup t 6 ((Ipaddr.of_string_exn "0.0.0.0"), 6000) exterior_v4) None
+    (lookup t 6 ((Ipaddr.of_string_exn "0.0.0.0"), 6000) translate_v4) None
 
 (* TODO: with an empty table, any randomized check does not succeed *)
 

@@ -70,7 +70,7 @@ let insert ?(mode=OneToMany) table proto left right translate timeout =
   let internal_lookup, external_lookup = 
     match mode with
     | OneToMany -> (proto, left, right), (proto, right, translate)
-    | OneToOne -> (proto, translate, right), (proto, left, translate)
+    | OneToOne -> (proto, right, translate), (proto, left, translate)
   in
   (* TODO: this is subject to race conditions *)
   (* needs Lwt.join *)

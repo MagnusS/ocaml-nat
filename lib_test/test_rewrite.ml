@@ -144,6 +144,31 @@ let basic_tcpv4 (direction : Rewrite.direction) proto ttl src dst xl sport dport
   in
   frame, table
 
+let test_tcp_ipv4_oto context =
+  let ttl = 4 in
+  let proto = 6 in
+  let src = (Ipaddr.V4.of_string_exn "192.168.108.26") in
+  let dst = (Ipaddr.V4.of_string_exn "4.141.2.6") in 
+  let xl = (Ipaddr.V4.of_string_exn "128.104.108.1") in
+  let sport, dport, xlport = 255, 1024, 45454 in
+  let smac_addr = Macaddr.of_string_exn "00:16:3e:ff:ff:ff" in
+  let frame, len = basic_ipv4_frame proto src xl ttl smac_addr in
+  let frame, len = add_tcp (frame, len) sport xlport in
+  let table = 
+    match Lookup.insert ~mode:OneToOne (Lookup.empty ()) proto
+            ((V4 src), sport) ((V4 dst), dport) ((V4 xl), xlport) Active
+    with
+    | Some t -> t
+    | None -> assert_failure "Failed to insert test data into table structure"
+  in
+  match Rewrite.translate ~mode:OneToOne table Destination frame with
+  | None -> assert_failure "one-to-one translation failed for a reasonable
+  frame"
+  | Some xl_frame ->
+    test_ipv4_rewriting xl dst proto (ttl - 1) xl_frame;
+    (* TODO: test ports too *)
+    ()
+
 let test_tcp_ipv4_dst context = 
   let ttl = 4 in
   let proto = 6 in
@@ -400,7 +425,7 @@ let test_make_entry_one_to_one context =
       | _, None | None, _ -> assert_failure 
         "make_entry claimed success, but was missing expected entries entirely"
     in
-    let src_lookup = Lookup.lookup t proto (V4 xl_ip, xl_port) (V4 dst, dport) in
+    let src_lookup = Lookup.lookup t proto (V4 dst, dport) (V4 xl_ip, xl_port) in
     let dst_lookup = Lookup.lookup t proto (V4 src, sport) (V4 xl_ip, xl_port) in
     check_entries src_lookup dst_lookup;
     (* trying the same operation again should give us an Overlap failure *)
@@ -413,6 +438,11 @@ let test_make_entry_one_to_one context =
     | Ok t -> assert_failure "make_entry allowed a duplicate entry"
 
 let test_detect_direction_ipv4 context =
+  let printer = function
+    | None -> "none"
+    | Some Source -> "source"
+    | Some Destination -> "destination"
+  in
   let proto = 17 in
   let src = Ipaddr.V4.of_string_exn "5.121.8.4" in
   let dst = Ipaddr.V4.of_string_exn "107.32.111.12" in
@@ -422,13 +452,14 @@ let test_detect_direction_ipv4 context =
   let table = Lookup.empty () in
   let (frame, len) = basic_ipv4_frame proto xl dst 52 smac_addr in
   let (frame, len) = add_udp (frame, len) xlport dport in
-  assert_equal (Some Source) (detect_direction frame (V4 xl));
-  assert_equal (Some Destination) (detect_direction frame (V4 dst));
-  assert_equal (None) (detect_direction frame (V4 src));
+  assert_equal ~printer (Some Source) (detect_direction frame (V4 xl));
+  assert_equal ~printer (Some Destination) (detect_direction frame (V4 dst));
+  assert_equal ~printer (None) (detect_direction frame (V4 src));
   let (frame, len) = basic_ipv4_frame proto src xl 52 smac_addr in
   let (frame, len) = add_udp (frame, len) sport xlport in
-  assert_equal (Some Source) (detect_direction frame (V4 src));
-  assert_equal (Some Destination) (detect_direction frame (V4 xl))
+  assert_equal ~printer (Some Source) (detect_direction frame (V4 src));
+  assert_equal ~printer (Some Destination) (detect_direction frame (V4 xl));
+  assert_equal ~printer (None) (detect_direction frame (V4 dst))
 
 let test_detect_direction_ipv6 context =
   todo "Test not implemented :("
@@ -444,6 +475,7 @@ let suite = "test-rewrite" >:::
               (* TODO UDP IPv4 source rewriting test *)
               "TCP IPv4 destination rewriting works" >:: test_tcp_ipv4_dst ;
               "TCP IPv4 source rewriting works" >:: test_tcp_ipv4_src ;
+              "TCP IPv4 one-to-one rewriting works" >:: test_tcp_ipv4_oto;
               "UDP IPv6 rewriting works" >:: test_udp_ipv6;
               "TCP IPv6 rewriting works" >:: test_tcp_ipv6; 
               (* TODO: 4-to-6, 6-to-4 tests *)

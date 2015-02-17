@@ -12,8 +12,14 @@ type insert_result =
   * on the Cstruct.t .  If the packet should be forwarded, return Some packet,
   * else return None.  (TODO: this doesn't really make sense in the context of a
   * library function; separate out this logic.) 
-  * This function is zero-copy and mutates values in the given Cstruct.  *)
-val translate : Lookup.t -> direction -> Cstruct.t -> Cstruct.t option
+  * This function is zero-copy and mutates values in the given Cstruct.  
+  * if mode is OnetoMany, just rewrite the Source or Destination per Direction;
+  * if mode is OneToOne, also flip the directionality of source/direction before 
+  * translating (e.g., a rather than 
+  1.2.3.4 -> 192.168.3.80 => 1.2.3.4 -> 108.104.111.111, 
+  1.2.3.4 -> 192.168.3.80 => 192.168.3.80 -> 108.104.111.111
+  *)
+val translate : ?mode:Lookup.xl_mode -> Lookup.t -> direction -> Cstruct.t -> Cstruct.t option
 
 (* given an IP and a frame, return whether the Source or Destination matches (or
 neither *)
