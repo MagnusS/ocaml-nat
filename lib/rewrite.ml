@@ -109,6 +109,12 @@ let retrieve_ports tx_layer =
   ((Wire_structs.get_udp_source_port tx_layer : int), 
    (Wire_structs.get_udp_dest_port tx_layer : int))
 
+let detect_direction frame ip =
+  match retrieve_ips frame with
+  | Some (src, dst) when (Ipaddr.compare src ip = 0) -> Some Source
+  | Some (src, dst) when (Ipaddr.compare dst ip = 0) -> Some Destination
+  | _ -> None
+
 let translate table direction frame =
   (* note that ethif.input doesn't have the same register-listeners-then-input
      format that tcp/udp do, so we could use it for the outer layer of parsing *)

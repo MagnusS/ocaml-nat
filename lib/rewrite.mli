@@ -7,7 +7,6 @@ type insert_result =
   | Overlap
   | Unparseable
 
-
 (** given a lookup table, rewrite direction, and an ip-level frame, 
   * perform any translation indicated by presence in the table
   * on the Cstruct.t .  If the packet should be forwarded, return Some packet,
@@ -15,6 +14,10 @@ type insert_result =
   * library function; separate out this logic.) 
   * This function is zero-copy and mutates values in the given Cstruct.  *)
 val translate : Lookup.t -> direction -> Cstruct.t -> Cstruct.t option
+
+(* given an IP and a frame, return whether the Source or Destination matches (or
+neither *)
+val detect_direction : Cstruct.t -> Ipaddr.t -> direction option
 
 (** given a table, a frame, and a translation IP and port, 
   * put relevant entries for the (src_ip, src_port), (dst_ip, dst_port) from the

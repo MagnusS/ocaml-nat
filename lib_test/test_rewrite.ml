@@ -412,11 +412,34 @@ let test_make_entry_one_to_one context =
       assert_failure "make_entry claimed that a reference packet was unparseable"
     | Ok t -> assert_failure "make_entry allowed a duplicate entry"
 
+let test_detect_direction_ipv4 context =
+  let proto = 17 in
+  let src = Ipaddr.V4.of_string_exn "5.121.8.4" in
+  let dst = Ipaddr.V4.of_string_exn "107.32.111.12" in
+  let xl = Ipaddr.V4.of_string_exn "66.22.15.26" in
+  let sport, dport, xlport = 18787, 80, 10201 in
+  let smac_addr = Macaddr.of_string_exn "00:16:3e:65:65:65" in
+  let table = Lookup.empty () in
+  let (frame, len) = basic_ipv4_frame proto xl dst 52 smac_addr in
+  let (frame, len) = add_udp (frame, len) xlport dport in
+  assert_equal (Some Source) (detect_direction frame (V4 xl));
+  assert_equal (Some Destination) (detect_direction frame (V4 dst));
+  assert_equal (None) (detect_direction frame (V4 src));
+  let (frame, len) = basic_ipv4_frame proto src xl 52 smac_addr in
+  let (frame, len) = add_udp (frame, len) sport xlport in
+  assert_equal (Some Source) (detect_direction frame (V4 src));
+  assert_equal (Some Destination) (detect_direction frame (V4 xl))
+
+let test_detect_direction_ipv6 context =
+  todo "Test not implemented :("
+
 let test_tcp_ipv6 context =
   todo "Test not implemented :("
 
 let suite = "test-rewrite" >:::
             [
+              "Direction checking gives correct results" >::
+              test_detect_direction_ipv4;
               "UDP IPv4 rewriting works" >:: test_udp_ipv4;
               (* TODO UDP IPv4 source rewriting test *)
               "TCP IPv4 destination rewriting works" >:: test_tcp_ipv4_dst ;
