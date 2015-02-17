@@ -5,6 +5,11 @@ type state = (* logic for timing out table entries *)
   | Waiting of unit Lwt.t (* sleeper thread that, on wake, will remove this entry *)
   | Active (* currently, nothing will time this thread out *)
 
+(* TODO: I'm not in love with these names. *)
+type xl_mode = 
+  | OneToMany
+  | OneToOne
+
 (* also should track some subset of tcp/udp state -- timer thread for UDP,
   state/timer for TCP (since we can't be sure everything *we* see is seen by the
    remote end) *)
@@ -17,7 +22,8 @@ connection before we clear the other side). *)
 
 val lookup : t -> protocol -> (Ipaddr.t * port) -> (Ipaddr.t * port) -> (Ipaddr.t * port) option
 
-val insert : t -> protocol -> (Ipaddr.t * port) -> (Ipaddr.t * port) -> (Ipaddr.t * port) 
+val insert : ?mode:xl_mode -> t -> 
+  protocol -> (Ipaddr.t * port) -> (Ipaddr.t * port) -> (Ipaddr.t * port) 
   -> state -> t option
 
 val delete : t -> protocol -> (Ipaddr.t * port) -> (Ipaddr.t * port) -> (Ipaddr.t * port ) ->

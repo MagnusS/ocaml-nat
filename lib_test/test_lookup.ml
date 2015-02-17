@@ -17,15 +17,15 @@ let show_table_entry (proto, left, right, translate) = Printf.sprintf
     (Ipaddr.to_string (fst translate)) (snd translate)
     (Ipaddr.to_string (fst right)) (snd right)
 
-let default_table () =
+let default_table ?(mode=OneToMany) () =
   let or_error fn = 
     match fn with
     | Some r -> r
     | None -> assert_failure "Couldn't construct test NAT table"
   in
   let t = Lookup.empty () in
-  let t = or_error (insert t 6 interior_v4 exterior_v4 translate_v4 Active) in
-  let t = or_error (insert t 17 interior_v6 exterior_v6 translate_v6 Active) in
+  let t = or_error (insert ~mode t 6 interior_v4 exterior_v4 translate_v4 Active) in
+  let t = or_error (insert ~mode t 17 interior_v6 exterior_v6 translate_v6 Active) in
   t
 
 let basic_lookup context =
@@ -40,6 +40,27 @@ let basic_lookup context =
     (lookup t 17 exterior_v6 translate_v6) (Some interior_v6);
   assert_equal 
     (lookup t 4 interior_v4 exterior_v4) None;
+  assert_equal 
+    (lookup t 6 ((Ipaddr.of_string_exn "8.8.8.8"), 6000) exterior_v4) None;
+  assert_equal 
+    (lookup t 6 ((Ipaddr.of_string_exn "0.0.0.0"), 6000) exterior_v4) None
+
+let one_to_one_lookup context =
+  let t = default_table ~mode:OneToOne () in
+  assert_equal 
+    (lookup t 6 interior_v4 translate_v4) (Some exterior_v4);
+  assert_equal 
+    (lookup t 6 translate_v4 exterior_v4) (Some interior_v4);
+  assert_equal 
+    (lookup t 17 interior_v6 translate_v6) (Some exterior_v6);
+  assert_equal 
+    (lookup t 17 translate_v6 exterior_v6) (Some interior_v6);
+  assert_equal 
+    (lookup t 4 interior_v4 exterior_v4) None;
+  assert_equal 
+    (lookup t 17 interior_v4 exterior_v4) None; (* this entry will succeed for
+                                                  1:many but shouldn't for 1:1
+                                                  *)
   assert_equal 
     (lookup t 6 ((Ipaddr.of_string_exn "8.8.8.8"), 6000) exterior_v4) None;
   assert_equal 
@@ -147,7 +168,8 @@ let uniqueness context =
 
 let suite = "test-lookup" >::: 
   [
-    "basic lookups work" >:: basic_lookup;
+    "basic one:many inserts/lookups work" >:: basic_lookup;
+    "basic one:one inserts/lookups work" >:: one_to_one_lookup;
     "crud" >:: crud;
     "uniqueness is enforced" >:: uniqueness
   ]

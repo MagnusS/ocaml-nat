@@ -365,41 +365,52 @@ let test_make_entry_nonsense context =
       with a bare ethernet frame"
       | Unparseable -> ()
 
-let test_udp_entry_timeout context =
-  let wait_period = 2 in
-  let ttl = 4 in
+let test_make_entry_one_to_one context =
   let proto = 17 in
-  let src = (Ipaddr.V4.of_string_exn "10.254.254.254") in
-  let dst = (Ipaddr.V4.of_string_exn "8.8.8.8") in 
-  let xl = (Ipaddr.V4.of_string_exn "126.4.1.2") in
-  let sport, dport, xlport = 40192,10001,45454 in
-  let smac_addr = Macaddr.of_string_exn "00:16:3e:44:44:44" in
-  let (frame, len) = basic_ipv4_frame proto src dst ttl smac_addr in
-  let (frame, len) = add_udp (frame, len) sport dport in
-  (* ugh this is a horrible architecture. *)
-  (* so let's think about why this sucks:
-   * shared mutable state
-   * with no locks 
-   * and non-atomic operations 
-   *)
+  let src = Ipaddr.V4.of_string_exn "5.121.8.4" in
+  let dst = Ipaddr.V4.of_string_exn "107.32.111.12" in
+  let sport = 18787 in
+  let dport = 80 in
+  let xl_ip = Ipaddr.V4.of_string_exn "66.22.15.26" in
+  let xl_port = 10201 in
+  let smac_addr = Macaddr.of_string_exn "00:16:3e:65:65:65" in
   let table = Lookup.empty () in
-  let timeout proto src dst xl = 
-    let open Lwt in
-    return (Unix.sleep wait_period) >>= fun () ->
-    Printf.printf "oh noes timeout expired";
-    (* TODO: don't ignore results *)
-    ignore (Lookup.delete table proto src dst xl);
-    return ()
-  in
-  let s, d, x = ((V4 src), sport), ((V4 dst), dport), ((V4 xl), xlport) in
-  Lookup.insert table proto s d x (Waiting (timeout proto s d x));
-  match Rewrite.translate table Source frame with
-  | Some n ->
-    Unix.sleep wait_period;
-    assert_equal None (Rewrite.translate table Source frame)
-  | None -> assert_failure "We didn't translate a frame before the timeout
-  should've expired" 
-
+  let (frame, len) = basic_ipv4_frame proto src dst 52 smac_addr in
+  let (frame, len) = add_udp (frame, len) sport dport in
+  match Rewrite.make_entry ~mode:OneToOne table frame (Ipaddr.V4 xl_ip) xl_port Active with
+  | Overlap -> assert_failure "make_entry claimed overlap when inserting into an
+                 empty table"
+  | Unparseable -> 
+    Printf.printf "Allegedly unparseable frame follows:\n";
+    Cstruct.hexdump frame;
+    assert_failure "make_entry claimed that a reference packet was unparseable"
+  | Ok t ->
+    (* make sure table actually has the entries we expect *)
+    let check_entries (src_lookup : (Ipaddr.t * int) option) dst_lookup = 
+      (* TODO: rewrite this; assert_equal and a printer function would be
+         clearer *)
+      match src_lookup, dst_lookup with
+      | Some (q_ip, q_port), Some (r_ip, r_port) when 
+          (q_ip, q_port, r_ip, r_port) = (V4 src, sport, V4 dst, dport) -> ()
+      | Some (q_ip, q_port), Some (r_ip, r_port) -> 
+        let err = Printf.sprintf "Bad entry from make_entry: %s, %d; %s, %d\n" 
+            (Ipaddr.to_string q_ip) q_port 
+            (Ipaddr.to_string r_ip) r_port in
+        assert_failure err
+      | _, None | None, _ -> assert_failure 
+        "make_entry claimed success, but was missing expected entries entirely"
+    in
+    let src_lookup = Lookup.lookup t proto (V4 xl_ip, xl_port) (V4 dst, dport) in
+    let dst_lookup = Lookup.lookup t proto (V4 src, sport) (V4 xl_ip, xl_port) in
+    check_entries src_lookup dst_lookup;
+    (* trying the same operation again should give us an Overlap failure *)
+    match Rewrite.make_entry ~mode:OneToOne table frame (Ipaddr.V4 xl_ip) xl_port Active with
+    | Overlap -> ()
+    | Unparseable -> 
+      Printf.printf "Allegedly unparseable frame follows:\n";
+      Cstruct.hexdump frame;
+      assert_failure "make_entry claimed that a reference packet was unparseable"
+    | Ok t -> assert_failure "make_entry allowed a duplicate entry"
 
 let test_tcp_ipv6 context =
   todo "Test not implemented :("
@@ -412,12 +423,12 @@ let suite = "test-rewrite" >:::
               "TCP IPv4 source rewriting works" >:: test_tcp_ipv4_src ;
               "UDP IPv6 rewriting works" >:: test_udp_ipv6;
               "TCP IPv6 rewriting works" >:: test_tcp_ipv6; 
-              "UDP IPv4 entries expire when asked to" >::
-              test_udp_entry_timeout;
               (* TODO: 4-to-6, 6-to-4 tests *)
               "make_entry makes entries" >:: test_make_entry_valid_pkt;
               (* TODO: test make_entry in non-ipv4 contexts *)
-              "make_entry refuses nonsense frames" >:: test_make_entry_nonsense
+              "make_entry refuses nonsense frames" >:: test_make_entry_nonsense;
+              "make_entry makes OneToOne entries properly" >::
+              test_make_entry_one_to_one
             ]
 
 let () = 

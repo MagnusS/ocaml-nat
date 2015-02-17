@@ -7,6 +7,7 @@ type insert_result =
   | Overlap
   | Unparseable
 
+
 (** given a lookup table, rewrite direction, and an ip-level frame, 
   * perform any translation indicated by presence in the table
   * on the Cstruct.t .  If the packet should be forwarded, return Some packet,
@@ -17,7 +18,16 @@ val translate : Lookup.t -> direction -> Cstruct.t -> Cstruct.t option
 
 (** given a table, a frame, and a translation IP and port, 
   * put relevant entries for the (src_ip, src_port), (dst_ip, dst_port) from the
-  * frame and given (xl_ip, xl_port). 
+  * frame and given (xl_ip, xl_port), depending on the mode argument.
+  * if mode is OneToMany (i.e., the mode we want with two ifaces), 
+    ((src_ip, src_port), (dst_ip, dst_port)) to (xl_ip, xl_port) and 
+    ((dst_ip, dst_port), (xl_ip, xl_port)) to (src_ip, src_port) .
+  * If mode is OneToOne, (i.e., we're accepting traffic on behalf of another IP
+    and doing 1:1 NAT translation), entries will look like:
+    ((src_ip, src_port), (xl_ip, xl_port)) to (dst_ip, dst_port) and
+    ((xl_ip, xl_port), (dst_ip, dst_port)) to (src_ip, src_port).
   * if insertion succeeded, return the new table;
   * otherwise, return an error type indicating the problem. *)
-val make_entry : Lookup.t -> Cstruct.t -> Ipaddr.t -> int -> Lookup.state -> insert_result
+val make_entry : ?mode:Lookup.xl_mode -> Lookup.t 
+  -> Cstruct.t -> Ipaddr.t -> int -> Lookup.state -> insert_result
+
