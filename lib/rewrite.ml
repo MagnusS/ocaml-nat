@@ -94,6 +94,7 @@ let retrieve_ips frame =
   let ip_packet = Cstruct.shift frame Wire_structs.sizeof_ethernet in
   match ip_type with
   | 0x0800 -> (* ipv4 *) 
+    if (Cstruct.len ip_packet) < (Wire_structs.sizeof_ipv4) then None else 
     Some 
     (Ipaddr.V4 (Ipaddr.V4.of_int32 (Wire_structs.get_ipv4_src ip_packet)), 
      Ipaddr.V4 (Ipaddr.V4.of_int32 (Wire_structs.get_ipv4_dst ip_packet)))
@@ -226,4 +227,42 @@ let make_entry ?(mode=(OneToMany : Lookup.xl_mode)) table frame xl_ip xl_port ti
         | _, _ -> Unparseable
       end
 
-| _, _ -> Unparseable
+    | _, _ -> Unparseable
+
+let ip_and_above_of_frame frame =
+  let minimal_size = function
+    | 0x0800 -> Wire_structs.sizeof_ipv4 + Wire_structs.sizeof_ethernet 
+    | 0x86dd -> Wire_structs.Ipv6_wire.sizeof_ipv6 +
+                Wire_structs.sizeof_ethernet
+  in
+  let ethertype = (Wire_structs.get_ethernet_ethertype frame) in
+  match ethertype with
+  | 0x0800 | 0x86dd -> 
+    if (Cstruct.len frame) < (minimal_size ethertype) then None
+    else Some (Cstruct.shift frame Wire_structs.sizeof_ethernet)
+  | _ -> None
+
+let transport_and_above_of_ip ip = 
+  let hlen_version = Wire_structs.get_ipv4_hlen_version ip in
+  match ((hlen_version land 0xf0) lsr 4) with
+  | 4 -> (* length (in words, not bytes) is in the other half of hlen_version *)
+    Some (Cstruct.shift ip ((hlen_version land 0x0f) * 4))
+  | 6 -> (* ipv6 is a constant length *)
+    Some ( Cstruct.shift ip Wire_structs.Ipv6_wire.sizeof_ipv6)
+  | n -> None
+
+let proto_of_frame frame = 
+  match ip_and_above_of_frame frame with
+  | None -> None
+  | Some ip_layer -> Some (Wire_structs.get_ipv4_proto ip_layer)
+
+let ips_of_frame frame = retrieve_ips frame
+
+let ports_of_frame frame = 
+  match ip_and_above_of_frame frame with
+  | None -> None
+  | Some ip_layer -> 
+    match transport_and_above_of_ip ip_layer with
+    | None -> None
+    | Some tx_layer -> retrieve_ports tx_layer
+  

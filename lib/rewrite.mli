@@ -40,3 +40,12 @@ val detect_direction : Cstruct.t -> Ipaddr.t -> direction option
 val make_entry : ?mode:Lookup.xl_mode -> Lookup.t 
   -> Cstruct.t -> Ipaddr.t -> int -> Lookup.state -> insert_result
 
+(* given an ethernet-and-above frame, fish out the src and dst ip *)
+val ips_of_frame : Cstruct.t -> (Ipaddr.t * Ipaddr.t) option
+
+(* given an ethernet-and-above frame, fish out the transport-layer protocol *)
+val proto_of_frame : Cstruct.t -> int option
+
+(* given an ethernet-and-above frame, fish out the transport-layer source and
+   destination ports *)
+val ports_of_frame : Cstruct.t -> (int * int) option

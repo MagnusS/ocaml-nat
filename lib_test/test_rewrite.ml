@@ -467,8 +467,36 @@ let test_detect_direction_ipv6 context =
 let test_tcp_ipv6 context =
   todo "Test not implemented :("
 
+let test_extractors context =
+  let ttl = 4 in
+  let proto = 6 in
+  let src = (Ipaddr.V4.of_string_exn "192.168.108.26") in
+  let dst = (Ipaddr.V4.of_string_exn "4.141.2.6") in 
+  let xl = (Ipaddr.V4.of_string_exn "128.104.108.1") in
+  let sport, dport, xlport = 255, 1024, 45454 in
+  let frame, table = basic_tcpv4 Source proto ttl src dst xl sport dport xlport in
+  let printer = function
+    | None -> "none"
+    | Some (p, q) -> Printf.sprintf ("%s, %s\n") (Ipaddr.to_string p)
+                       (Ipaddr.to_string q)
+  in
+  assert_equal ~printer (ips_of_frame frame) (Some ((V4 src), (V4 dst)));
+  assert_equal (proto_of_frame frame) (Some proto);
+  assert_equal (ports_of_frame frame) (Some (sport, dport));
+  let frame = Cstruct.set_len frame (Wire_structs.sizeof_ethernet +
+                                     Wire_structs.sizeof_ipv4) in
+  assert_equal ~printer (ips_of_frame frame) (Some ((V4 src), (V4 dst)));
+  assert_equal (proto_of_frame frame) (Some proto);
+  assert_equal (ports_of_frame frame) None;
+  let frame = Cstruct.set_len frame (Wire_structs.sizeof_ethernet) in
+  assert_equal ~printer (ips_of_frame frame) None;
+  assert_equal (proto_of_frame frame) None;
+  assert_equal (ports_of_frame frame) None
+
 let suite = "test-rewrite" >:::
             [
+
+              "[ips,proto,ports]_of_frame" >:: test_extractors;
               "Direction checking gives correct results" >::
               test_detect_direction_ipv4;
               "UDP IPv4 rewriting works" >:: test_udp_ipv4;
